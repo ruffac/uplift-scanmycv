@@ -3,6 +3,8 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { sendDiscordNotification } from "../utils/discordNotifications";
+import { validateFile } from "../utils/fileValidation";
 import {
   ResumeValidationResult,
   validateResume,
@@ -24,6 +26,7 @@ export default function ResumeUploadForm() {
   const [copySuccess, setCopySuccess] = useState(false);
   const [allowedEmails, setAllowedEmails] = useState<string[]>([]);
   const [isLoadingEmails, setIsLoadingEmails] = useState(true);
+  const [isValidating, setIsValidating] = useState(false);
 
   useEffect(() => {
     const fetchAllowedEmails = async () => {
@@ -49,65 +52,33 @@ export default function ResumeUploadForm() {
     fetchAllowedEmails();
   }, []);
 
-  const validateFile = (file: File): ValidationError[] => {
-    const errors: ValidationError[] = [];
-
-    // Check file type - only PDF allowed
-    if (file.type !== "application/pdf") {
-      errors.push({
-        field: "file",
-        message: "Only PDF files are allowed",
-      });
-    }
-
-    // Check file size (1MB limit)
-    const maxSize = 1 * 1024 * 1024; // 1MB in bytes
-    if (file.size > maxSize) {
-      errors.push({
-        field: "file",
-        message: "File size must be less than 1MB",
-      });
-    }
-
-    // Check file name format: Name_Title_Specialization_YYYY and validate year
-    const currentYear = new Date().getFullYear();
-    const fileNameRegex = new RegExp(
-      `^[A-Za-z]+_[A-Za-z]+_${currentYear}\\.pdf$`,
-      "i"
-    );
-
-    if (!fileNameRegex.test(file.name)) {
-      errors.push({
-        field: "file",
-        message: `File name must be in the format: Name_Title_${currentYear}.pdf (e.g., AlexCruz_FullStackDeveloper_${currentYear}.pdf)`,
-      });
-    }
-
-    return errors;
-  };
-
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
+      if (email)
+        await sendDiscordNotification({
+          type: "RESUME_REVIEW_STARTED",
+          email,
+        });
       const fileErrors = validateFile(selectedFile);
       setErrors(fileErrors);
       if (fileErrors.length === 0) {
         setFile(selectedFile);
         // Run resume validation
+        setIsValidating(true);
         const result = await validateResume(selectedFile);
         setValidationResult(result);
+        setIsValidating(false);
       }
     }
   };
 
-  const handleEmailChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const newEmail = e.target.value;
-    setEmail(newEmail);
+  const handleEmailChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    setEmail(e.target.value);
 
-    // Clear email-related errors if the email is valid and in the allowed list
     if (
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail) &&
-      allowedEmails.includes(newEmail.toLowerCase())
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
+      allowedEmails.includes(email.toLowerCase())
     ) {
       setErrors(errors.filter((error) => error.field !== "email"));
     }
@@ -142,6 +113,10 @@ export default function ResumeUploadForm() {
             "For now, this is only available to Uplift Code Camp UpStart 2025 registered students",
         },
       ]);
+      await sendDiscordNotification({
+        type: "UNAUTHORIZED_ACCESS_ATTEMPT",
+        email: email,
+      });
       setIsSubmitting(false);
       return;
     }
@@ -186,19 +161,6 @@ export default function ResumeUploadForm() {
       }
 
       const { text } = await response.json();
-      try {
-        await fetch("/api/discord-notify", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            email,
-          }),
-        });
-      } catch (error) {
-        console.error("Failed to send Discord notification:", error);
-      }
 
       // Send to Gemini for review
       const geminiResponse = await fetch("/api/gemini-review", {
@@ -227,6 +189,11 @@ export default function ResumeUploadForm() {
 
       const { feedback } = await geminiResponse.json();
       setGeminiFeedback(feedback);
+
+      await sendDiscordNotification({
+        type: "RESUME_AI_FEEDBACK",
+        email,
+      });
     } catch (error) {
       console.error("Error during submission:", error);
       setErrors((prev) => [
@@ -493,10 +460,18 @@ export default function ResumeUploadForm() {
         <div>
           <button
             type="submit"
-            disabled={isSubmitting || validationResult?.isValid === false}
+            disabled={
+              isSubmitting ||
+              isValidating ||
+              validationResult?.isValid === false
+            }
             className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSubmitting ? "Submitting..." : "Submit for Review"}
+            {isSubmitting
+              ? "Submitting..."
+              : isValidating
+              ? "Checking..."
+              : "Submit for Review"}
           </button>
         </div>
       )}
