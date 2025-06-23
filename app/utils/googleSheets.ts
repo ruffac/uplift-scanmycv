@@ -18,16 +18,53 @@ const auth = new google.auth.GoogleAuth({
       process.env.GOOGLE_SHEETS_PRIVATE_KEY
     )?.replace(/\\n/g, "\n"),
   },
-  scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+  scopes: ["https://www.googleapis.com/auth/spreadsheets"],
 });
 
 const sheets = google.sheets({ version: "v4", auth });
+
+const findRowIndexByeEmail = async (email: string) => {
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+    range: "'Sheet1'!A:A",
+  });
+
+  const rows = response.data.values;
+  if (!rows) {
+    console.error("No data found in the Google Sheet for email", email);
+    return -1;
+  }
+
+  // Find the row index (1-based) where the email matches
+  const rowIndex = rows.findIndex(
+    (row) => row[0]?.toLowerCase().trim() === email.toLowerCase().trim()
+  );
+
+  if (rowIndex === -1) {
+    console.error(`Email ${email} not found in the Google Sheet`);
+    return -1;
+  }
+  return rowIndex + 1;
+};
+
+const updateDate = async (rowIndex: number) => {
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+    range: `'Sheet1'!E${rowIndex}`,
+    valueInputOption: "RAW",
+    requestBody: {
+      values: [
+        [new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" })],
+      ],
+    },
+  });
+};
 
 export async function getAllowedEmails(): Promise<string[]> {
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEETS_ID,
-      range: "'Form Responses 1'!F:F",
+      range: "'Sheet1'!A:A",
     });
 
     const rows = response.data.values;
@@ -51,5 +88,76 @@ export async function getAllowedEmails(): Promise<string[]> {
       });
     }
     return [];
+  }
+}
+
+export async function updateValidationStatus(
+  email: string,
+  isValid: boolean
+): Promise<boolean> {
+  try {
+    const rowIndex = await findRowIndexByeEmail(email);
+    if (rowIndex === -1) {
+      throw new Error(`Email ${email} not found in the Google Sheet`);
+    }
+
+    // Update the validation status in column C
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+      range: `'Sheet1'!C${rowIndex}`,
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [[isValid ? "Passed" : "Fixes required"]],
+      },
+    });
+
+    // Update the score in column D
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+      range: `'Sheet1'!D${rowIndex}`,
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [[10]],
+      },
+    });
+
+    await updateDate(rowIndex);
+    return true;
+  } catch (error) {
+    console.error("Error updating validation status in Google Sheets:", error);
+    if (error instanceof Error) {
+      console.error("Error details:", {
+        message: error.message,
+        stack: error.stack,
+      });
+    }
+    return false;
+  }
+}
+export async function updateResumeReviewsScore(email: string, score: number) {
+  try {
+    const rowIndex = await findRowIndexByeEmail(email);
+    if (rowIndex === -1) {
+      throw new Error(`Email ${email} not found in the Google Sheet`);
+    }
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+      range: `'Sheet1'!D${rowIndex}`,
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [[score]],
+      },
+    });
+    await updateDate(rowIndex);
+    return true;
+  } catch (error) {
+    console.error("Error updating validation status in Google Sheets:", error);
+    if (error instanceof Error) {
+      console.error("Error details:", {
+        message: error.message,
+        stack: error.stack,
+      });
+    }
+    return false;
   }
 }

@@ -59,7 +59,7 @@ export async function validateResume(
     formData.append("file", file);
 
     // Call the API endpoint
-    const response = await fetch("/api/validate-resume", {
+    const response = await fetch("/api/resume/validate", {
       method: "POST",
       body: formData,
     });

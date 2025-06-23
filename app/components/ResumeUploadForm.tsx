@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { sendDiscordNotification } from "../utils/discordNotifications";
@@ -24,64 +24,82 @@ export default function ResumeUploadForm() {
     useState<ResumeValidationResult | null>(null);
   const [geminiFeedback, setGeminiFeedback] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
-  const [allowedEmails, setAllowedEmails] = useState<string[]>([]);
-  const [isLoadingEmails, setIsLoadingEmails] = useState(true);
   const [isValidating, setIsValidating] = useState(false);
 
-  useEffect(() => {
-    const fetchAllowedEmails = async () => {
-      try {
-        const response = await fetch("/api/allowed-emails");
-        if (!response.ok) throw new Error("Failed to fetch allowed emails");
-        const data = await response.json();
-        setAllowedEmails(data.emails);
-      } catch (error) {
-        console.error("Error fetching allowed emails:", error);
-        setErrors((prev) => [
-          ...prev,
-          {
-            field: "email",
-            message: "Unable to verify email access. Please try again later.",
-          },
-        ]);
-      } finally {
-        setIsLoadingEmails(false);
-      }
-    };
+  const updateGoogleSheetsValidationStatus = async (
+    email: string,
+    isValid: boolean
+  ) => {
+    try {
+      const updateResponse = await fetch("/api/resume/validate", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          isValid,
+        }),
+      });
 
-    fetchAllowedEmails();
-  }, []);
-
-  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile) {
-      if (email)
+      if (!updateResponse.ok) {
+        throw new Error(
+          `Failed to update validation status in Google Sheets for ${email}`
+        );
+      } else {
         await sendDiscordNotification({
           type: "RESUME_REVIEW_STARTED",
           email,
         });
-      const fileErrors = validateFile(selectedFile);
-      setErrors(fileErrors);
-      if (fileErrors.length === 0) {
-        setFile(selectedFile);
-        // Run resume validation
-        setIsValidating(true);
-        const result = await validateResume(selectedFile);
-        setValidationResult(result);
-        setIsValidating(false);
       }
+    } catch (error) {
+      await sendDiscordNotification({
+        type: "ERROR",
+        message: `Failed to update validation status in Google Sheets: ${error}`,
+      });
+    }
+    return;
+  };
+
+  const updateGoogleSheetsScore = async (email: string, score: number) => {
+    try {
+      const updateScore = await fetch("api/resume/score", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, score }),
+      });
+      if (!updateScore.ok) {
+        throw new Error(
+          `Failed to update score ${score} in Google Sheets for ${email}`
+        );
+      } else {
+        await sendDiscordNotification({
+          type: "RESUME_AI_FEEDBACK",
+          message: `Resume review score for ${email} is ${score}`,
+        });
+      }
+    } catch (error) {
+      await sendDiscordNotification({
+        type: "ERROR",
+        message: `Failed to update score in Google Sheets: ${error}`,
+      });
+    }
+    return;
+  };
+
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile) {
+      setFile(selectedFile);
+      setErrors([]);
+      setValidationResult(null);
+      setGeminiFeedback(null);
     }
   };
 
-  const handleEmailChange = async (e: ChangeEvent<HTMLInputElement>) => {
+  const handleEmailChange = (e: ChangeEvent<HTMLInputElement>) => {
     setEmail(e.target.value);
-
-    if (
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
-      allowedEmails.includes(email.toLowerCase())
-    ) {
-      setErrors(errors.filter((error) => error.field !== "email"));
-    }
+    setErrors(errors.filter((error) => error.field !== "email"));
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -90,7 +108,7 @@ export default function ResumeUploadForm() {
     setErrors([]);
     setGeminiFeedback(null);
 
-    // Validate email format and check if it's an allowed student email
+    // Basic email format validation
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setErrors((prev) => [
         ...prev,
@@ -99,24 +117,6 @@ export default function ResumeUploadForm() {
           message: "Please enter a valid email address",
         },
       ]);
-      setIsSubmitting(false);
-      return;
-    }
-
-    // Check if email is in allowed list
-    if (!allowedEmails.includes(email.toLowerCase())) {
-      setErrors((prev) => [
-        ...prev,
-        {
-          field: "email",
-          message:
-            "For now, this is only available to Uplift Code Camp UpStart 2025 registered students",
-        },
-      ]);
-      await sendDiscordNotification({
-        type: "UNAUTHORIZED_ACCESS_ATTEMPT",
-        email: email,
-      });
       setIsSubmitting(false);
       return;
     }
@@ -134,15 +134,46 @@ export default function ResumeUploadForm() {
       return;
     }
 
-    // Check if resume validation passed
-    if (validationResult && !validationResult.isValid) {
+    // Validate file format and size
+    const fileErrors = validateFile(file);
+    if (fileErrors.length > 0) {
+      setErrors((prev) => [...prev, ...fileErrors]);
+      setIsSubmitting(false);
+      return;
+    }
+
+    // Validate email access first
+    const emailResponse = await fetch("/api/allowed-emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email }),
+    });
+
+    if (!emailResponse.ok) {
+      const errorData = await emailResponse.json();
       setErrors((prev) => [
         ...prev,
         {
-          field: "file",
-          message: "Please fix the issues in your resume before submitting",
+          field: "email",
+          message:
+            errorData.error || "Email validation failed. Please try again.",
         },
       ]);
+      setIsSubmitting(false);
+      return;
+    }
+
+    // Run resume validation
+    setIsValidating(true);
+    const result = await validateResume(file);
+    setValidationResult(result);
+    await updateGoogleSheetsValidationStatus(email, result.isValid);
+    setIsValidating(false);
+
+    // Check if resume validation passed
+    if (!result.isValid) {
       setIsSubmitting(false);
       return;
     }
@@ -151,7 +182,7 @@ export default function ResumeUploadForm() {
       // Get the resume text from validation result
       const formData = new FormData();
       formData.append("file", file);
-      const response = await fetch("/api/validate-resume", {
+      const response = await fetch("/api/resume/validate", {
         method: "POST",
         body: formData,
       });
@@ -190,10 +221,11 @@ export default function ResumeUploadForm() {
       const { feedback } = await geminiResponse.json();
       setGeminiFeedback(feedback);
 
-      await sendDiscordNotification({
-        type: "RESUME_AI_FEEDBACK",
-        email,
-      });
+      const scoreMatch =
+        feedback.match(/Resume Review score: (\d{1,2}|100)/) || 0;
+
+      const score = parseInt(scoreMatch[1], 10);
+      await updateGoogleSheetsScore(email, score);
     } catch (error) {
       console.error("Error during submission:", error);
       setErrors((prev) => [
@@ -243,15 +275,9 @@ export default function ResumeUploadForm() {
             onChange={handleEmailChange}
             autoComplete="email"
             required
-            disabled={isLoadingEmails}
             className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 text-black focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-            placeholder={isLoadingEmails ? "Loading..." : "you@example.com"}
+            placeholder="you@example.com"
           />
-          {isLoadingEmails && (
-            <p className="mt-2 text-sm text-gray-500">
-              Loading email verification...
-            </p>
-          )}
           {errors.find((e) => e.field === "email") && (
             <p className="mt-2 text-sm text-red-600">
               {errors.find((e) => e.field === "email")?.message}
@@ -418,6 +444,10 @@ export default function ResumeUploadForm() {
             >
               {geminiFeedback}
             </ReactMarkdown>
+            <p>
+              If you have any questions or concerns, please message the Student
+              Success Team :)
+            </p>
           </div>
         </div>
       )}

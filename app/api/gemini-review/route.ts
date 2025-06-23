@@ -33,6 +33,14 @@ Education:
 
 Please provide specific recommendations for improvement in each area.
 And general recommendations for the resume.
+
+And then score the resume on a scale of 1 to 100.
+100 is the highest score.
+1 is the lowest score.
+The score should be a number between 1 and 100.
+25 points are awarded for each section on Summary, Highlights/Proficiencies, Work Experience, and Education.
+The total score is the sum of the scores for each section. Give it as a number with format Resume Review score: N.
+
 Do not add any other text to the response.
 Do not include recommendations for visual appeal.
 

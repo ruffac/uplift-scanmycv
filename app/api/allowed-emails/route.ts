@@ -1,14 +1,32 @@
 import { getAllowedEmails } from "@/app/utils/googleSheets";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+export async function POST(request: NextRequest) {
   try {
-    const emails = await getAllowedEmails();
-    return NextResponse.json({ emails });
+    const { email } = await request.json();
+
+    if (!email) {
+      return NextResponse.json({ error: "Email is required" }, { status: 400 });
+    }
+
+    const allowedEmails = await getAllowedEmails();
+    const isAllowed = allowedEmails.includes(email.toLowerCase().trim());
+
+    if (!isAllowed) {
+      return NextResponse.json(
+        {
+          error:
+            "Email not authorized. For now, this is only available to Uplift Code Camp students. Please contact us if you are a student and want to use this service.",
+        },
+        { status: 403 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Error fetching allowed emails:", error);
+    console.error("Error in allowed-emails POST:", error);
     return NextResponse.json(
-      { error: "Failed to fetch allowed emails" },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }

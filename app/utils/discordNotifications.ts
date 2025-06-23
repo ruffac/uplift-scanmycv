@@ -1,7 +1,8 @@
 export type NotificationEvent =
   | { type: "RESUME_REVIEW_STARTED"; email: string }
   | { type: "UNAUTHORIZED_ACCESS_ATTEMPT"; email: string }
-  | { type: "RESUME_AI_FEEDBACK"; email: string };
+  | { type: "RESUME_AI_FEEDBACK"; message: string }
+  | { type: "ERROR"; message: string };
 
 const formatDiscordMessage = (event: NotificationEvent): string => {
   switch (event.type) {
@@ -10,7 +11,9 @@ const formatDiscordMessage = (event: NotificationEvent): string => {
     case "UNAUTHORIZED_ACCESS_ATTEMPT":
       return `⚠️ Unauthorized access attempt from ${event.email}`;
     case "RESUME_AI_FEEDBACK":
-      return `🤖 AI feedback generated for ${event.email}'s resume`;
+      return `🤖 AI feedback generated ${event.message}`;
+    case "ERROR":
+      return `❌ Error: ${event.message}`;
     default:
       return "Unknown event";
   }
