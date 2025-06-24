@@ -17,6 +17,7 @@ interface ValidationError {
 
 export default function ResumeUploadForm() {
   const [email, setEmail] = useState("");
+  const [linkedinUrl, setLinkedinUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -102,6 +103,11 @@ export default function ResumeUploadForm() {
     setErrors(errors.filter((error) => error.field !== "email"));
   };
 
+  const handleLinkedinChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setLinkedinUrl(e.target.value);
+    setErrors(errors.filter((error) => error.field !== "linkedin"));
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -115,6 +121,19 @@ export default function ResumeUploadForm() {
         {
           field: "email",
           message: "Please enter a valid email address",
+        },
+      ]);
+      setIsSubmitting(false);
+      return;
+    }
+
+    // LinkedIn URL validation
+    if (!linkedinUrl || !linkedinUrl.includes("linkedin.com/")) {
+      setErrors((prev) => [
+        ...prev,
+        {
+          field: "linkedin",
+          message: "Please enter a valid LinkedIn URL",
         },
       ]);
       setIsSubmitting(false);
@@ -226,6 +245,19 @@ export default function ResumeUploadForm() {
 
       const score = parseInt(scoreMatch[1], 10);
       await updateGoogleSheetsScore(email, score);
+
+      // Update LinkedIn URL
+      const linkedinResponse = await fetch("/api/linkedin", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, linkedinUrl }),
+      });
+
+      if (!linkedinResponse.ok) {
+        throw new Error("Failed to update LinkedIn URL");
+      }
     } catch (error) {
       console.error("Error during submission:", error);
       setErrors((prev) => [
@@ -281,6 +313,32 @@ export default function ResumeUploadForm() {
           {errors.find((e) => e.field === "email") && (
             <p className="mt-2 text-sm text-red-600">
               {errors.find((e) => e.field === "email")?.message}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <label
+          htmlFor="linkedin"
+          className="block text-sm font-medium text-gray-700"
+        >
+          LinkedIn Profile URL
+        </label>
+        <div className="mt-1">
+          <input
+            id="linkedin"
+            name="linkedin"
+            type="url"
+            value={linkedinUrl}
+            onChange={handleLinkedinChange}
+            required
+            className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 text-black focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+            placeholder="https://linkedin.com/in/your-profile"
+          />
+          {errors.find((e) => e.field === "linkedin") && (
+            <p className="mt-2 text-sm text-red-600">
+              {errors.find((e) => e.field === "linkedin")?.message}
             </p>
           )}
         </div>

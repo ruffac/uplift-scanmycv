@@ -161,3 +161,81 @@ export async function updateResumeReviewsScore(email: string, score: number) {
     return false;
   }
 }
+
+export async function updateLinkedInUrl(
+  email: string,
+  linkedinUrl: string
+): Promise<boolean> {
+  try {
+    const rowIndex = await findRowIndexByeEmail(email);
+    if (rowIndex === -1) {
+      throw new Error(`Email ${email} not found in the Google Sheet`);
+    }
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+      range: `'Sheet1'!F${rowIndex}`,
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [[linkedinUrl]],
+      },
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Error updating LinkedIn URL in Google Sheets:", error);
+    if (error instanceof Error) {
+      console.error("Error details:", {
+        message: error.message,
+        stack: error.stack,
+      });
+    }
+    return false;
+  }
+}
+
+export async function incrementSubmissionCount(
+  email: string
+): Promise<boolean> {
+  try {
+    const rowIndex = await findRowIndexByeEmail(email);
+    if (rowIndex === -1) {
+      throw new Error(`Email ${email} not found in the Google Sheet`);
+    }
+
+    // Get current submission count
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+      range: `'Sheet1'!G${rowIndex}`,
+    });
+
+    // Get current count or default to 0 if no value exists
+    const currentCount = response.data.values?.[0]?.[0]
+      ? parseInt(response.data.values[0][0], 10)
+      : 0;
+
+    // Increment the count
+    const newCount = currentCount + 1;
+
+    // Update the submission count in column G
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+      range: `'Sheet1'!G${rowIndex}`,
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [[newCount]],
+      },
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Error updating submission count in Google Sheets:", error);
+    if (error instanceof Error) {
+      console.error("Error details:", {
+        message: error.message,
+        stack: error.stack,
+      });
+    }
+    return false;
+  }
+}

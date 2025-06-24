@@ -1,4 +1,7 @@
-import { updateValidationStatus } from "@/app/utils/googleSheets";
+import {
+  incrementSubmissionCount,
+  updateValidationStatus,
+} from "@/app/utils/googleSheets";
 import { NextRequest, NextResponse } from "next/server";
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
 
@@ -63,11 +66,15 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const success = await updateValidationStatus(email, isValid);
+    // Update validation status and increment submission count
+    const [validationSuccess, submissionCountSuccess] = await Promise.all([
+      updateValidationStatus(email, isValid),
+      incrementSubmissionCount(email),
+    ]);
 
-    if (!success) {
+    if (!validationSuccess || !submissionCountSuccess) {
       return NextResponse.json(
-        { error: "Failed to update validation status" },
+        { error: "Failed to update validation status or submission count" },
         { status: 500 }
       );
     }
