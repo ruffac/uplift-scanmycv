@@ -107,7 +107,7 @@ export async function updateValidationStatus(
       range: `'Sheet1'!C${rowIndex}`,
       valueInputOption: "RAW",
       requestBody: {
-        values: [[isValid ? "Passed" : "Fixes required"]],
+        values: [[isValid ? "First scan ok" : "Fixes required"]],
       },
     });
 

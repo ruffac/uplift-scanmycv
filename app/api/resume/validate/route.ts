@@ -1,7 +1,4 @@
-import {
-  incrementSubmissionCount,
-  updateValidationStatus,
-} from "@/app/utils/googleSheets";
+import { incrementSubmissionCount } from "@/app/utils/googleSheets";
 import { NextRequest, NextResponse } from "next/server";
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
 
@@ -96,21 +93,23 @@ export async function PUT(request: NextRequest) {
     }
 
     // Update validation status and increment submission count
-    const [validationSuccess, submissionCountSuccess] = await Promise.all([
-      updateValidationStatus(email, isValid),
-      incrementSubmissionCount(email),
-    ]);
+    // const [validationSuccess, submissionCountSuccess] = await Promise.all([
+    //   updateValidationStatus(email, isValid),
+    //   incrementSubmissionCount(email),
+    // ]);
 
-    if (!validationSuccess || !submissionCountSuccess) {
-      return NextResponse.json(
-        { error: "Failed to update validation status or submission count" },
-        { status: 500 }
-      );
-    }
+    await incrementSubmissionCount(email);
+
+    // if (!validationSuccess || !submissionCountSuccess) {
+    //   return NextResponse.json(
+    //     { error: "Failed to update validation status or submission count" },
+    //     { status: 500 }
+    //   );
+    // }
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Error in allowed-emails PUT:", error);
+    console.error("Error in resume/validate PUT:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
