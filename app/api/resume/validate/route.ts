@@ -5,17 +5,43 @@ import {
 import { NextRequest, NextResponse } from "next/server";
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
 
-interface TextItem {
+interface PDFItem {
   str: string;
-  dir: string;
+  transform: number[];
 }
 
-interface TextContent {
-  items: TextItem[];
+interface LineItem {
+  x: number;
+  str: string;
 }
 
-interface PageData {
-  getTextContent(): Promise<TextContent>;
+interface Lines {
+  [key: string]: LineItem[];
+}
+
+function groupCharactersByLineAndWord(charItems: PDFItem[]): string[] {
+  const lines: Lines = {};
+  const lineThreshold = 0.5; // adjust based on height
+
+  for (const item of charItems) {
+    const [, , , , x, y] = item.transform; // extract position
+    const yKey = Object.keys(lines).find(
+      (k) => Math.abs(parseFloat(k) - y) < lineThreshold
+    );
+    const key = yKey !== undefined ? yKey : y.toString();
+
+    if (!lines[key]) lines[key] = [];
+    lines[key].push({ x, str: item.str });
+  }
+
+  const sortedLines = Object.values(lines).map((line) =>
+    line
+      .sort((a: LineItem, b: LineItem) => a.x - b.x)
+      .map((c: LineItem) => c.str)
+      .join("")
+  );
+
+  return sortedLines;
 }
 
 export async function POST(request: NextRequest) {
@@ -31,9 +57,11 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(arrayBuffer);
 
     const options = {
-      pagerender: async function (pageData: PageData) {
+      pagerender: async function (pageData: any) {
         const textContent = await pageData.getTextContent();
-        return textContent.items.map((item) => item.str).join(" ");
+        const groupedLines = groupCharactersByLineAndWord(textContent.items);
+        const combinedText = groupedLines.join(" ");
+        return combinedText;
       },
     };
 
