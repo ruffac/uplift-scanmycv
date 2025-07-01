@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(arrayBuffer);
 
     const options = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       pagerender: async function (pageData: any) {
         const textContent = await pageData.getTextContent();
         const groupedLines = groupCharactersByLineAndWord(textContent.items);
