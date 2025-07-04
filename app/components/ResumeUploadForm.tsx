@@ -198,6 +198,38 @@ export default function ResumeUploadForm() {
     }
 
     try {
+      // Save file to Google Drive first
+      const driveFormData = new FormData();
+      driveFormData.append("file", file);
+      driveFormData.append("email", email);
+
+      const driveResponse = await fetch("/api/resume/save-to-drive", {
+        method: "POST",
+        body: driveFormData,
+      });
+
+      if (!driveResponse.ok) {
+        throw new Error("Failed to save file to Google Drive");
+      }
+
+      const driveData = await driveResponse.json();
+
+      // Save Drive link to Google Sheets
+      const driveLinkResponse = await fetch("/api/resume/drive-link", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          resumeDriveLink: driveData.webViewLink,
+        }),
+      });
+
+      if (!driveLinkResponse.ok) {
+        console.error("Failed to save Resume Drive link to Google Sheets");
+      }
+
       // Get the resume text from validation result
       const formData = new FormData();
       formData.append("file", file);

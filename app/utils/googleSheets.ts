@@ -239,3 +239,35 @@ export async function incrementSubmissionCount(
     return false;
   }
 }
+
+export async function updateResumeDriveLink(
+  email: string,
+  resumeDriveLink: string
+): Promise<boolean> {
+  try {
+    const rowIndex = await findRowIndexByeEmail(email);
+    if (rowIndex === -1) {
+      throw new Error(`Email ${email} not found in the Google Sheet`);
+    }
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+      range: `'Sheet1'!H${rowIndex}`,
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [[resumeDriveLink]],
+      },
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Error updating Resume Drive link in Google Sheets:", error);
+    if (error instanceof Error) {
+      console.error("Error details:", {
+        message: error.message,
+        stack: error.stack,
+      });
+    }
+    return false;
+  }
+}
