@@ -56,7 +56,7 @@ export default function ResumeUploadForm() {
     } catch (error) {
       await sendDiscordNotification({
         type: "ERROR",
-        message: `Failed to update validation status in Google Sheets: ${error}`,
+        message: `Failed to update validation status of ${email} in Google Sheets: ${error}`,
       });
     }
     return;
@@ -198,7 +198,6 @@ export default function ResumeUploadForm() {
     }
 
     try {
-      // Save file to Google Drive first
       const driveFormData = new FormData();
       driveFormData.append("file", file);
       driveFormData.append("email", email);
@@ -208,13 +207,8 @@ export default function ResumeUploadForm() {
         body: driveFormData,
       });
 
-      if (!driveResponse.ok) {
-        throw new Error("Failed to save file to Google Drive");
-      }
-
       const driveData = await driveResponse.json();
 
-      // Save Drive link to Google Sheets
       const driveLinkResponse = await fetch("/api/resume/drive-link", {
         method: "PUT",
         headers: {
@@ -225,11 +219,20 @@ export default function ResumeUploadForm() {
           resumeDriveLink: driveData.webViewLink,
         }),
       });
-
       if (!driveLinkResponse.ok) {
-        console.error("Failed to save Resume Drive link to Google Sheets");
+        await sendDiscordNotification({
+          type: "ERROR",
+          message: `Failed to save for ${email}: ${driveLinkResponse.statusText}`,
+        });
       }
+    } catch (error) {
+      await sendDiscordNotification({
+        type: "ERROR",
+        message: `Failed to save for ${email}: ${error}`,
+      });
+    }
 
+    try {
       // Get the resume text from validation result
       const formData = new FormData();
       formData.append("file", file);
@@ -292,6 +295,10 @@ export default function ResumeUploadForm() {
       }
     } catch (error) {
       console.error("Error during submission:", error);
+      await sendDiscordNotification({
+        type: "ERROR",
+        message: `Error during submission: ${email}: ${error}`,
+      });
       setErrors((prev) => [
         ...prev,
         {
