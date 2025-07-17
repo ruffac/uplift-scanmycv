@@ -2,43 +2,84 @@ import { incrementSubmissionCount } from "@/app/utils/googleSheets";
 import { NextRequest, NextResponse } from "next/server";
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
 
-interface PDFItem {
+interface TextItem {
   str: string;
   transform: number[];
+  width?: number;
 }
 
 interface LineItem {
   x: number;
   str: string;
+  width?: number;
 }
 
 interface Lines {
   [key: string]: LineItem[];
 }
 
-function groupCharactersByLineAndWord(charItems: PDFItem[]): string[] {
+// Helper function to fix pre-spaced text
+function fixPreSpacedText(text: string): string {
+  if (/^[A-Z](\s+[A-Z])+$/.test(text)) {
+    return text.replace(/\s+/g, "");
+  }
+  return text;
+}
+
+function groupCharactersByLineAndWord(charItems: TextItem[]): string[] {
   const lines: Lines = {};
-  const lineThreshold = 0.5; // adjust based on height
+  const lineThreshold = 0.5;
+  const wordSpacingThreshold = 10;
 
   for (const item of charItems) {
-    const [, , , , x, y] = item.transform; // extract position
-    const yKey = Object.keys(lines).find(
-      (k) => Math.abs(parseFloat(k) - y) < lineThreshold
-    );
-    const key = yKey !== undefined ? yKey : y.toString();
+    const fixedStr = fixPreSpacedText(item.str);
+    const [, , , , x, y] = item.transform;
 
-    if (!lines[key]) lines[key] = [];
-    lines[key].push({ x, str: item.str });
+    const roundedY = Math.round(y * 100) / 100;
+    const yKey =
+      Object.keys(lines).find(
+        (k) => Math.abs(parseFloat(k) - roundedY) < lineThreshold
+      ) || roundedY.toString();
+
+    if (!lines[yKey]) {
+      lines[yKey] = [];
+    }
+
+    const currentLine = lines[yKey];
+
+    if (currentLine.length > 0) {
+      const lastItem = currentLine[currentLine.length - 1];
+      const xDiff = x - (lastItem.x + (lastItem.width || 0));
+
+      if (xDiff > wordSpacingThreshold) {
+        currentLine.push({
+          x: lastItem.x + (lastItem.width || 0),
+          str: " ",
+          width: wordSpacingThreshold / 2,
+        });
+      }
+    }
+
+    currentLine.push({
+      x,
+      str: fixedStr,
+      width: item.width,
+    });
   }
 
-  const sortedLines = Object.values(lines).map((line) =>
-    line
-      .sort((a: LineItem, b: LineItem) => a.x - b.x)
-      .map((c: LineItem) => c.str)
-      .join("")
+  const sortedYKeys = Object.keys(lines).sort(
+    (a, b) => parseFloat(b) - parseFloat(a)
   );
 
-  return sortedLines;
+  const sortedLines = sortedYKeys.map((key) =>
+    lines[key]
+      .sort((a, b) => a.x - b.x)
+      .map((c) => c.str)
+      .join("")
+      .trim()
+  );
+
+  return sortedLines.filter((line) => line.length > 0);
 }
 
 export async function POST(request: NextRequest) {
@@ -58,7 +99,7 @@ export async function POST(request: NextRequest) {
       pagerender: async function (pageData: any) {
         const textContent = await pageData.getTextContent();
         const groupedLines = groupCharactersByLineAndWord(textContent.items);
-        const combinedText = groupedLines.join(" ");
+        const combinedText = groupedLines.join("\n");
         return combinedText;
       },
     };
@@ -92,20 +133,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Update validation status and increment submission count
-    // const [validationSuccess, submissionCountSuccess] = await Promise.all([
-    //   updateValidationStatus(email, isValid),
-    //   incrementSubmissionCount(email),
-    // ]);
-
     await incrementSubmissionCount(email);
-
-    // if (!validationSuccess || !submissionCountSuccess) {
-    //   return NextResponse.json(
-    //     { error: "Failed to update validation status or submission count" },
-    //     { status: 500 }
-    //   );
-    // }
 
     return NextResponse.json({ success: true });
   } catch (error) {
