@@ -20,6 +20,7 @@ const auth = new google.auth.GoogleAuth({
 });
 
 const drive = google.drive({ version: "v3", auth });
+const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
 // Convert Buffer to Readable Stream
 function bufferToStream(buffer: Buffer): Readable {
@@ -29,21 +30,19 @@ function bufferToStream(buffer: Buffer): Readable {
   return stream;
 }
 
-// Get username from email
 function getUsernameFromEmail(email: string): string {
   return email.split("@")[0];
 }
 
-// Find existing file for the email
-async function findExistingFile(
-  email: string,
-  folderId: string
-): Promise<string | null> {
+async function findExistingFile(email: string): Promise<string | null> {
   try {
-    // Search for files with the exact filename in the specified folder
     const username = getUsernameFromEmail(email);
     const fileName = `${username}_resume.pdf`;
     const response = await drive.files.list({
+      driveId: folderId,
+      includeItemsFromAllDrives: true,
+      supportsAllDrives: true,
+      corpora: "drive",
       q: `'${folderId}' in parents and name = '${fileName}' and trashed = false`,
       fields: "files(id, name)",
     });
@@ -76,7 +75,6 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
     if (!folderId) {
       throw new Error("Google Drive folder ID is not configured");
     }
@@ -86,45 +84,32 @@ export async function POST(request: NextRequest) {
     const fileName = `${username}_resume.pdf`;
 
     // Check if file already exists
-    const existingFileId = await findExistingFile(email, folderId);
+    const existingFileId = await findExistingFile(email);
 
     let response;
+    const queryParams = {
+      supportsAllDrives: true,
+      media: {
+        mimeType: file.type,
+        body: bufferToStream(buffer),
+      },
+      fields: "id,webViewLink",
+    };
     if (existingFileId) {
-      // Update existing file
       response = await drive.files.update({
+        ...queryParams,
         fileId: existingFileId,
-        media: {
-          mimeType: file.type,
-          body: bufferToStream(buffer),
-        },
-        fields: "id,webViewLink",
       });
     } else {
-      // Create new file
       const fileMetadata: drive_v3.Schema$File = {
         name: fileName,
         parents: [folderId],
       };
 
       response = await drive.files.create({
+        ...queryParams,
         requestBody: fileMetadata,
-        media: {
-          mimeType: file.type,
-          body: bufferToStream(buffer),
-        },
-        fields: "id,webViewLink",
       });
-
-      // Set file permissions to anyone with the link can view
-      if (response.data.id) {
-        await drive.permissions.create({
-          fileId: response.data.id,
-          requestBody: {
-            role: "reader",
-            type: "anyone",
-          },
-        });
-      }
     }
 
     if (!response.data.id) {
