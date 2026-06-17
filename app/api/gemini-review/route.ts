@@ -60,13 +60,13 @@ export async function POST(request: NextRequest) {
       ) {
         const timeLeft = Math.ceil(
           (RATE_LIMIT_DURATION - (currentTime - parseInt(lastReviewTime))) /
-            (60 * 1000)
+            (60 * 1000),
         );
         return NextResponse.json(
           {
             error: `Rate limit exceeded. Please wait ${timeLeft} minutes before requesting another review.`,
           },
-          { status: 429 }
+          { status: 429 },
         );
       }
     }
@@ -76,16 +76,15 @@ export async function POST(request: NextRequest) {
     if (!text) {
       return NextResponse.json(
         { error: "No resume text provided" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
 
     const result = await model.generateContent(RESUME_REVIEW_PROMPT + text);
     const response = await result.response;
     const feedback = response.text();
-
     // Create response with feedback and set cookie
     const finalResponse = NextResponse.json({ feedback });
 
@@ -103,7 +102,7 @@ export async function POST(request: NextRequest) {
     console.error("Gemini API error:", error);
     return NextResponse.json(
       { error: "Failed to analyze resume" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
